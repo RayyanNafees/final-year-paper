@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "skills": {
+    "data-visualization": {
+      "source": "anthropics/knowledge-work-plugins",
+      "sourceType": "github",
+      "skillPath": "data/skills/data-visualization/SKILL.md",
+      "computedHash": "a238cd5981b2da6bd7ecc24cfb3d7238be993ee5a2ad97acb414f9758aba13dd"
+    },
+    "numpy-best-practices": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "numpy-best-practices/SKILL.md",
+      "computedHash": "33ddb4c683ff8171a2171ef06018c80e4993419b67056a8780f56a9eedbec87e"
+    },
+    "polars": {
+      "source": "k-dense-ai/scientific-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/polars/SKILL.md",
+      "computedHash": "4ab87d6f959e34cd02a129e4c2bdda0b10eadae41804981d9407e83af19242b4"
+    },
+    "pytorch-patterns": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/pytorch-patterns/SKILL.md",
+      "computedHash": "eb170710a86bc3bc292ad27fddbdf15e46f707eab139e192bad59099cb47586a"
+    },
+    "ruff": {
+      "source": "astral-sh/claude-code-plugins",
+      "sourceType": "github",
+      "skillPath": "plugins/astral/skills/ruff/SKILL.md",
+      "computedHash": "90727f14f7d6b27491b5cbe3f91fe0cb9f0e96eb70ea8d81fd4428c4bbcf0141"
+    },
+    "scikit-learn": {
+      "source": "k-dense-ai/scientific-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/scikit-learn/SKILL.md",
+      "computedHash": "2a42b7dde89706e721174ed83fb93c2253cf33843f798b4d4c2bf22e9fa86801"
+    },
+    "seaborn": {
+      "source": "k-dense-ai/scientific-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/seaborn/SKILL.md",
+      "computedHash": "45b770dfae89d24c92fca9db1c899aee483aef415998496348fd9606af4511cc"
+    },
+    "ty": {
+      "source": "astral-sh/claude-code-plugins",
+      "sourceType": "github",
+      "skillPath": "plugins/astral/skills/ty/SKILL.md",
+      "computedHash": "b27b5678010c0ac438d9812bb2ce011864a93aa13ffc0b7b4ac0e9d73d2e8d14"
+    },
+    "uv": {
+      "source": "astral-sh/claude-code-plugins",
+      "sourceType": "github",
+      "skillPath": "plugins/astral/skills/uv/SKILL.md",
+      "computedHash": "19be80af320534d243a183ae7608521b47bd89b48a138d0cdafef9548e832733"
+    }
+  }
+}
