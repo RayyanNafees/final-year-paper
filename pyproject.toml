@@ -29,4 +29,4 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "NPY", "PL", "RUF"]
 ignore = ["PLR0913", "PLR2004"]
 
 [tool.ty.src]
-include = ["train.py"]
+include = ["train.py", "plot_accuracy.py"]

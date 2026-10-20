@@ -179,3 +179,7 @@ pyrightconfig.json
 .venv
 .ruff_cache
 __pycache__
+.venv
+.ruff_cache
+.claude
+__pycache__

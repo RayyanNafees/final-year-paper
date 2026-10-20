@@ -1,9 +1,17 @@
-"""Binary fault detection for BLDC motors from psychoacoustic features.
+"""BLDC motor condition classification from psychoacoustic features.
 
-Trains four classifiers (Logistic Regression, SVM, ANN, 1D-CNN) to tell a
-healthy motor from a faulty one, using only the psychoacoustic features
-(Loudness, Sharpness, Fluctuation, Roughness). Loss curves, confusion
-matrices and test metrics are written to ``outputs/``.
+Four dataset cases are trained and evaluated independently:
+
+* OpenSource, with background noise      -> Healthy / Faulty / Heavy Load (3 classes)
+* OpenSource, without background noise   -> Healthy / Faulty / Heavy Load (3 classes)
+* TwoWheeler, with background noise      -> Healthy / Faulty              (2 classes)
+* TwoWheeler, without background noise   -> Healthy / Faulty              (2 classes)
+
+Every case is trained with four models: Logistic/Softmax Regression, SVM (RBF kernel),
+ANN and 1D-CNN. The inputs are the psychoacoustic features (Loudness, Sharpness,
+Fluctuation, Roughness), and each row's class label comes from its CSV file name.
+For every model the script writes one loss-curve image and one confusion-matrix image
+to ``outputs/``, each with one panel per dataset case.
 
 Run with:  uv run train.py
 """
@@ -29,26 +37,48 @@ from sklearn.metrics import (
     confusion_matrix,
     f1_score,
     hinge_loss,
-    log_loss,
     precision_score,
     recall_score,
 )
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch import nn
+from torch.nn import functional as F  # noqa: N812 - conventional PyTorch alias
 from torch.utils.data import DataLoader, TensorDataset
 
 SEED = 42
-ROOT = Path(__file__).resolve().parent
-DATA_DIR = ROOT / "data" / "OpenSource"
+ROOT = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+DATA_DIR = ROOT / "data"
 OUT_DIR = ROOT / "outputs"
 FEATURES = ["Loudness", "Sharpness", "Fluctuation", "Roughness"]
-CLASS_NAMES = ["Healthy", "Faulty"]
 
-SKLEARN_EPOCHS = 100
-TORCH_EPOCHS = 150
+# Dataset case name -> folder (relative to DATA_DIR) that holds its CSV files.
+CASES: dict[str, str] = {
+    "OpenSource - Noisy": "OpenSource/With Background noise",
+    "OpenSource - Without noise": "OpenSource/No Background noise",
+    "TwoWheeler - Noisy": "TwoWheeler/with background noise",
+    "TwoWheeler - Without noise": "TwoWheeler/Without background noise",
+}
+
+# File-name token -> class name. Tokens such as "pure" or "noisy" are ignored.
+LABEL_TOKENS = {
+    "good": "Healthy",
+    "healthy": "Healthy",
+    "broken": "Faulty",
+    "faulty": "Faulty",
+    "heavyload": "Heavy Load",
+}
+CLASS_ORDER = ["Healthy", "Faulty", "Heavy Load"]
+
+# Strictly positive, heavily right-skewed features (Fluctuation skew 5-20, spanning several
+# orders of magnitude) are log10-transformed before standardisation.
+LOG_FEATURES = ["Fluctuation", "Roughness"]
+
+SVM_EPOCHS = 100
+SVM_GRID = [(gamma, alpha) for gamma in (0.1, 0.5, 1.0) for alpha in (1e-4, 1e-3)]
+MAX_EPOCHS = 300
+PATIENCE = 30  # early stopping: epochs without validation-loss improvement
 BATCH_SIZE = 64
-LEARNING_RATE = 1e-3
 
 FloatArray = NDArray[np.float32]
 IntArray = NDArray[np.int64]
@@ -60,11 +90,13 @@ class History:
 
     train: list[float] = field(default_factory=list)
     val: list[float] = field(default_factory=list)
+    best_epoch: int | None = None  # 1-based epoch whose weights were kept
+    note: str = ""  # e.g. selected hyper-parameters
 
 
 @dataclass
 class Split:
-    """Scaled train / validation / test arrays."""
+    """Scaled train / validation / test arrays of one dataset case."""
 
     x_train: FloatArray
     y_train: IntArray
@@ -72,46 +104,69 @@ class Split:
     y_val: IntArray
     x_test: FloatArray
     y_test: IntArray
+    class_names: list[str]
+
+    @property
+    def n_classes(self) -> int:
+        return len(self.class_names)
 
 
 @dataclass
-class ModelResult:
-    name: str
-    loss_name: str
+class CaseResult:
+    """Outcome of training one model on one dataset case."""
+
     history: History
+    y_test: IntArray
     y_pred: IntArray
+    class_names: list[str]
 
 
 # --------------------------------------------------------------------------- data
 
 
-def load_dataset(data_dir: Path = DATA_DIR) -> pd.DataFrame:
-    """Load every psychoacoustic CSV and attach `label` (0=healthy, 1=faulty) and `noise`."""
-    frames: list[pd.DataFrame] = []
-    # Works for the nested repo layout and for a flat folder of the four CSVs.
-    for csv in sorted(data_dir.rglob("*.csv")):
+def class_from_filename(csv: Path) -> str:
+    """Map e.g. ``Noisy_HeavyLoad.csv`` -> ``Heavy Load`` using the tokens of the file name."""
+    for token in csv.stem.lower().split("_"):
+        if token in LABEL_TOKENS:
+            return LABEL_TOKENS[token]
+    raise ValueError(f"Cannot infer the class of {csv.name}; known tokens: {sorted(LABEL_TOKENS)}")
+
+
+def load_case(folder: Path) -> tuple[pd.DataFrame, list[str]]:
+    """Stack every CSV in ``folder`` into one frame with an integer ``label`` column."""
+    csvs = sorted(p for p in folder.rglob("*.csv") if not p.name.startswith("._"))
+    if not csvs:
+        raise FileNotFoundError(f"No CSV files found under {folder}")
+
+    frames = []
+    for csv in csvs:
         df = pd.read_csv(csv)
-        df["label"] = 1 if "broken" in csv.stem.lower() else 0
-        df["noise"] = "noisy" if "noisy" in csv.stem.lower() else "pure"
+        df["class_name"] = class_from_filename(csv)
         df["source"] = csv.name
         frames.append(df)
-    if not frames:
-        raise FileNotFoundError(f"No psychoacoustic CSV files found under {data_dir}")
-    return pd.concat(frames, ignore_index=True)
+    data = pd.concat(frames, ignore_index=True)
+
+    present = set(data["class_name"])
+    class_names = [c for c in CLASS_ORDER if c in present]
+    data["label"] = data["class_name"].map({c: i for i, c in enumerate(class_names)})
+    return data, class_names
 
 
-def make_split(df: pd.DataFrame) -> Split:
-    """Stratified 70/15/15 split; the scaler is fit on the training set only."""
-    x = df[FEATURES].to_numpy(dtype=np.float32)
-    y = df["label"].to_numpy(dtype=np.int64)
-    # Stratify on label *and* noise condition so every split has all four recordings.
-    strata = df["label"].astype(str) + "_" + df["noise"]
+def make_split(
+    data: pd.DataFrame, class_names: list[str], log_features: list[str] = LOG_FEATURES
+) -> Split:
+    """Stratified 70/15/15 split -> log10 of skewed features -> StandardScaler fit on train only."""
+    features = data[FEATURES].copy()
+    for col in log_features:
+        features[col] = np.log10(features[col])
+    x = features.to_numpy(dtype=np.float32)
+    y = data["label"].to_numpy(dtype=np.int64)
 
-    x_train, x_tmp, y_train, y_tmp, _, s_tmp = train_test_split(
-        x, y, strata, test_size=0.30, stratify=strata, random_state=SEED
+    x_train, x_tmp, y_train, y_tmp = train_test_split(
+        x, y, test_size=0.30, stratify=y, random_state=SEED
     )
     x_val, x_test, y_val, y_test = train_test_split(
-        x_tmp, y_tmp, test_size=0.50, stratify=s_tmp, random_state=SEED
+        x_tmp, y_tmp, test_size=0.50, stratify=y_tmp, random_state=SEED
     )
 
     scaler = StandardScaler().fit(x_train)
@@ -122,72 +177,77 @@ def make_split(df: pd.DataFrame) -> Split:
         y_val=y_val,
         x_test=scaler.transform(x_test).astype(np.float32),
         y_test=y_test,
+        class_names=class_names,
     )
 
 
-# ------------------------------------------------------------------ sklearn models
-
-LossFn = Callable[[SGDClassifier, FloatArray, IntArray], float]
+# ---------------------------------------------------------------------- SVM (sklearn)
 
 
-def _log_loss(clf: SGDClassifier, x: FloatArray, y: IntArray) -> float:
-    return float(log_loss(y, clf.predict_proba(x), labels=[0, 1]))
-
-
-def _hinge_loss(clf: SGDClassifier, x: FloatArray, y: IntArray) -> float:
-    return float(hinge_loss(y, clf.decision_function(x), labels=[0, 1]))
-
-
-def train_sgd(
-    clf: SGDClassifier,
-    split: Split,
-    loss_fn: LossFn,
-    *,
-    x_train: FloatArray,
-    x_val: FloatArray,
-    epochs: int = SKLEARN_EPOCHS,
-) -> History:
-    """Train an SGD linear model one epoch at a time, recording train/val loss."""
-    rng = np.random.default_rng(SEED)
-    history = History()
-    classes = np.array([0, 1])
-    for _ in range(epochs):
-        order = rng.permutation(len(x_train))
-        clf.partial_fit(x_train[order], split.y_train[order], classes=classes)
-        history.train.append(loss_fn(clf, x_train, split.y_train))
-        history.val.append(loss_fn(clf, x_val, split.y_val))
-    return history
-
-
-def run_logistic_regression(split: Split) -> ModelResult:
-    clf = SGDClassifier(
-        loss="log_loss", alpha=1e-4, learning_rate="constant", eta0=0.01, random_state=SEED
-    )
-    history = train_sgd(clf, split, _log_loss, x_train=split.x_train, x_val=split.x_val)
-    return ModelResult("Logistic Regression", "log loss", history, clf.predict(split.x_test))
-
-
-def run_svm(split: Split) -> ModelResult:
-    """RBF-kernel SVM: Nystroem kernel approximation + hinge-loss SGD (linear SVM)."""
-    kernel = Nystroem(kernel="rbf", gamma=0.5, n_components=300, random_state=SEED)
+def _fit_svm(
+    split: Split, gamma: float, alpha: float
+) -> tuple[History, Nystroem, SGDClassifier, float]:
+    """Train one SVM configuration epoch by epoch; return it with its validation accuracy."""
+    kernel = Nystroem(kernel="rbf", gamma=gamma, n_components=300, random_state=SEED)
     x_train = kernel.fit_transform(split.x_train).astype(np.float32)
     x_val = kernel.transform(split.x_val).astype(np.float32)
-    x_test = kernel.transform(split.x_test).astype(np.float32)
 
     clf = SGDClassifier(
-        loss="hinge", alpha=1e-4, learning_rate="constant", eta0=0.005, random_state=SEED
+        loss="hinge", alpha=alpha, learning_rate="constant", eta0=0.005, random_state=SEED
     )
-    history = train_sgd(clf, split, _hinge_loss, x_train=x_train, x_val=x_val)
-    return ModelResult("SVM (RBF kernel)", "hinge loss", history, clf.predict(x_test))
+    labels = np.arange(split.n_classes)
+    rng = np.random.default_rng(SEED)
+    history = History(note=f"gamma={gamma}, alpha={alpha:g}")
+    for _ in range(SVM_EPOCHS):
+        order = rng.permutation(len(x_train))
+        clf.partial_fit(x_train[order], split.y_train[order], classes=labels)
+        history.train.append(
+            float(hinge_loss(split.y_train, clf.decision_function(x_train), labels=labels))
+        )
+        history.val.append(
+            float(hinge_loss(split.y_val, clf.decision_function(x_val), labels=labels))
+        )
+    val_acc = float(accuracy_score(split.y_val, clf.predict(x_val)))
+    return history, kernel, clf, val_acc
 
 
-# -------------------------------------------------------------------- torch models
+def train_svm(split: Split, _device: torch.device) -> tuple[History, IntArray]:
+    """RBF-kernel SVM: Nystroem kernel approximation + hinge-loss SGD, one epoch at a time.
+
+    The RBF width `gamma` and the L2 strength `alpha` are picked from SVM_GRID by
+    validation accuracy (ties -> lower validation hinge loss); the test set is never used.
+    Multiclass cases are handled one-vs-rest; the loss reported for them is the
+    multiclass (Crammer-Singer) hinge loss.
+    """
+    fits = [_fit_svm(split, gamma, alpha) for gamma, alpha in SVM_GRID]
+    history, kernel, clf, _ = max(fits, key=lambda f: (f[3], -f[0].val[-1]))
+    x_test = kernel.transform(split.x_test).astype(np.float32)
+    return history, clf.predict(x_test).astype(np.int64)
+
+
+# ------------------------------------------------------------------- torch models
+
+
+def output_dim(n_classes: int) -> int:
+    """One logit (sigmoid) for binary problems, one logit per class (softmax) otherwise."""
+    return 1 if n_classes == 2 else n_classes
+
+
+class LinearClassifier(nn.Module):
+    """Logistic regression (binary) / softmax regression (multiclass): a single linear layer."""
+
+    def __init__(self, n_features: int, n_classes: int) -> None:
+        super().__init__()
+        self.linear = nn.Linear(n_features, output_dim(n_classes))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x)
 
 
 class ANN(nn.Module):
     """Fully connected feed-forward network (MLP)."""
 
-    def __init__(self, n_features: int) -> None:
+    def __init__(self, n_features: int, n_classes: int) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_features, 32),
@@ -195,17 +255,17 @@ class ANN(nn.Module):
             nn.Dropout(0.1),
             nn.Linear(32, 16),
             nn.ReLU(),
-            nn.Linear(16, 1),
+            nn.Linear(16, output_dim(n_classes)),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x).squeeze(-1)
+        return self.net(x)
 
 
 class CNN1D(nn.Module):
     """1D-CNN treating the feature vector as a 1-channel signal of length `n_features`."""
 
-    def __init__(self, n_features: int) -> None:
+    def __init__(self, n_features: int, n_classes: int) -> None:
         super().__init__()
         self.features = nn.Sequential(
             nn.Conv1d(1, 16, kernel_size=3, padding=1),
@@ -220,35 +280,42 @@ class CNN1D(nn.Module):
             nn.Linear(32 * n_features, 32),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(32, 1),
+            nn.Linear(32, output_dim(n_classes)),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x.unsqueeze(1)  # (batch, features) -> (batch, 1 channel, features)
-        return self.classifier(self.features(x)).squeeze(-1)
+        return self.classifier(self.features(x))
+
+
+def classification_loss(logits: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """Binary cross-entropy for a single logit, categorical cross-entropy otherwise."""
+    if logits.shape[-1] == 1:
+        return F.binary_cross_entropy_with_logits(logits.squeeze(-1), y.float())
+    return F.cross_entropy(logits, y)
+
+
+def predict_labels(logits: torch.Tensor) -> torch.Tensor:
+    if logits.shape[-1] == 1:
+        return (logits.squeeze(-1) > 0).long()  # sigmoid(z) > 0.5  <=>  z > 0
+    return logits.argmax(dim=-1)
 
 
 @torch.no_grad()
-def _eval_loss(model: nn.Module, x: torch.Tensor, y: torch.Tensor, criterion: nn.Module) -> float:
+def _eval_loss(model: nn.Module, x: torch.Tensor, y: torch.Tensor) -> float:
     model.eval()
-    return float(criterion(model(x), y).item())
-
-
-@torch.no_grad()
-def _predict(model: nn.Module, x: torch.Tensor) -> IntArray:
-    model.eval()
-    return (torch.sigmoid(model(x)) > 0.5).long().cpu().numpy()
+    return float(classification_loss(model(x), y).item())
 
 
 def train_torch(
-    model: nn.Module, split: Split, device: torch.device, epochs: int = TORCH_EPOCHS
+    model: nn.Module, split: Split, device: torch.device, lr: float
 ) -> tuple[History, IntArray]:
-    """Train with Adam + BCE; restore the weights with the lowest validation loss."""
+    """AdamW + ReduceLROnPlateau + early stopping; keep the weights with the lowest val loss."""
     model.to(device)
     x_train = torch.from_numpy(split.x_train).to(device)
-    y_train = torch.from_numpy(split.y_train).float().to(device)
+    y_train = torch.from_numpy(split.y_train).to(device)
     x_val = torch.from_numpy(split.x_val).to(device)
-    y_val = torch.from_numpy(split.y_val).float().to(device)
+    y_val = torch.from_numpy(split.y_val).to(device)
     x_test = torch.from_numpy(split.x_test).to(device)
 
     loader = DataLoader(
@@ -257,132 +324,207 @@ def train_torch(
         shuffle=True,
         generator=torch.Generator().manual_seed(SEED),
     )
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=10)
 
     history = History()
     best_val = float("inf")
     best_state = copy.deepcopy(model.state_dict())
-    for _ in range(epochs):
+    for epoch in range(1, MAX_EPOCHS + 1):
         model.train()
         for xb, yb in loader:
             optimizer.zero_grad(set_to_none=True)
-            loss = criterion(model(xb), yb)
-            loss.backward()
+            classification_loss(model(xb), yb).backward()
             optimizer.step()
 
-        history.train.append(_eval_loss(model, x_train, y_train, criterion))
-        history.val.append(_eval_loss(model, x_val, y_val, criterion))
-        if history.val[-1] < best_val:
+        history.train.append(_eval_loss(model, x_train, y_train))
+        history.val.append(_eval_loss(model, x_val, y_val))
+        scheduler.step(history.val[-1])
+        if history.val[-1] < best_val - 1e-5:
             best_val = history.val[-1]
             best_state = copy.deepcopy(model.state_dict())
+            history.best_epoch = epoch
+        elif history.best_epoch is not None and epoch - history.best_epoch >= PATIENCE:
+            break
 
     model.load_state_dict(best_state)
-    return history, _predict(model, x_test)
+    model.eval()
+    with torch.no_grad():
+        y_pred = predict_labels(model(x_test)).cpu().numpy()
+    return history, y_pred
 
 
-def run_ann(split: Split, device: torch.device) -> ModelResult:
+def train_linear(split: Split, device: torch.device) -> tuple[History, IntArray]:
     torch.manual_seed(SEED)
-    history, y_pred = train_torch(ANN(len(FEATURES)), split, device)
-    return ModelResult("ANN (MLP)", "BCE loss", history, y_pred)
+    return train_torch(LinearClassifier(len(FEATURES), split.n_classes), split, device, lr=1e-2)
 
 
-def run_cnn(split: Split, device: torch.device) -> ModelResult:
+def train_ann(split: Split, device: torch.device) -> tuple[History, IntArray]:
     torch.manual_seed(SEED)
-    history, y_pred = train_torch(CNN1D(len(FEATURES)), split, device)
-    return ModelResult("1D-CNN", "BCE loss", history, y_pred)
+    return train_torch(ANN(len(FEATURES), split.n_classes), split, device, lr=1e-3)
 
 
-# ------------------------------------------------------------------ reporting
+def train_cnn(split: Split, device: torch.device) -> tuple[History, IntArray]:
+    torch.manual_seed(SEED)
+    return train_torch(CNN1D(len(FEATURES), split.n_classes), split, device, lr=1e-3)
 
 
-def compute_metrics(y_true: IntArray, y_pred: IntArray) -> dict[str, object]:
+# ----------------------------------------------------------------- model registry
+
+Trainer = Callable[[Split, torch.device], tuple[History, IntArray]]
+
+
+@dataclass(frozen=True)
+class ModelSpec:
+    key: str  # used in output file names
+    title: str
+    trainer: Trainer
+    binary_loss: str
+    multiclass_loss: str
+
+    def loss_name(self, n_classes: int) -> str:
+        return self.binary_loss if n_classes == 2 else self.multiclass_loss
+
+    def case_title(self, n_classes: int) -> str:
+        if self.key == "logistic_regression":
+            return "Logistic regression" if n_classes == 2 else "Softmax regression"
+        return self.title
+
+
+MODELS = [
+    ModelSpec(
+        "logistic_regression",
+        "Logistic / Softmax Regression",
+        train_linear,
+        "binary cross-entropy",
+        "cross-entropy (softmax)",
+    ),
+    ModelSpec("svm", "SVM (RBF kernel)", train_svm, "hinge loss", "multiclass hinge loss"),
+    ModelSpec("ann", "ANN (MLP)", train_ann, "binary cross-entropy", "cross-entropy"),
+    ModelSpec("cnn1d", "1D-CNN", train_cnn, "binary cross-entropy", "cross-entropy"),
+]
+
+
+# ---------------------------------------------------------------------- reporting
+
+
+def compute_metrics(res: CaseResult) -> dict[str, object]:
+    """Accuracy plus macro-averaged precision / recall / F1 (equal weight per class)."""
+    labels = list(range(len(res.class_names)))
     return {
-        "accuracy": float(accuracy_score(y_true, y_pred)),
-        "precision": float(precision_score(y_true, y_pred, zero_division=0)),
-        "recall": float(recall_score(y_true, y_pred, zero_division=0)),
-        "f1": float(f1_score(y_true, y_pred, zero_division=0)),
-        "confusion_matrix": confusion_matrix(y_true, y_pred, labels=[0, 1]).tolist(),
+        "classes": res.class_names,
+        "accuracy": float(accuracy_score(res.y_test, res.y_pred)),
+        "precision_macro": float(
+            precision_score(res.y_test, res.y_pred, average="macro", zero_division=0)
+        ),
+        "recall_macro": float(
+            recall_score(res.y_test, res.y_pred, average="macro", zero_division=0)
+        ),
+        "f1_macro": float(f1_score(res.y_test, res.y_pred, average="macro", zero_division=0)),
+        "confusion_matrix": confusion_matrix(res.y_test, res.y_pred, labels=labels).tolist(),
+        "epochs_trained": len(res.history.train),
+        "best_epoch": res.history.best_epoch,
+        "selected_hyperparameters": res.history.note or None,
     }
 
 
-def plot_losses(results: list[ModelResult], path: Path) -> None:
-    fig = Figure(figsize=(12, 8), layout="constrained")
+def plot_loss_curves(spec: ModelSpec, results: dict[str, CaseResult], path: Path) -> None:
+    fig = Figure(figsize=(13, 9), layout="constrained")
     axes = fig.subplots(2, 2).flatten()
-    for ax, res in zip(axes, results, strict=True):
+    for ax, (case, res) in zip(axes, results.items(), strict=True):
+        n = len(res.class_names)
         epochs = np.arange(1, len(res.history.train) + 1)
         ax.plot(epochs, res.history.train, label="train", color="#2563eb", linewidth=2)
         ax.plot(epochs, res.history.val, label="validation", color="#ea580c", linewidth=2)
-        ax.set_title(res.name)
+        if res.history.best_epoch is not None:
+            ax.axvline(
+                res.history.best_epoch,
+                color="#6b7280",
+                linestyle="--",
+                linewidth=1,
+                label=f"best epoch ({res.history.best_epoch})",
+            )
+        detail = f", {res.history.note}" if res.history.note else ""
+        ax.set_title(f"{case}\n{spec.case_title(n)}, {n} classes{detail}")
         ax.set_xlabel("epoch")
-        ax.set_ylabel(res.loss_name)
+        ax.set_ylabel(spec.loss_name(n))
         ax.grid(alpha=0.3)
         ax.legend()
-    fig.suptitle("Training loss per epoch", fontsize=14)
+    fig.suptitle(f"{spec.title}: training & validation loss per epoch", fontsize=15)
     fig.savefig(path, dpi=150)
 
 
-def plot_confusion_matrices(results: list[ModelResult], y_test: IntArray, path: Path) -> None:
-    fig = Figure(figsize=(11, 9), layout="constrained")
+def plot_confusion_matrices(spec: ModelSpec, results: dict[str, CaseResult], path: Path) -> None:
+    fig = Figure(figsize=(13, 11), layout="constrained")
     axes = fig.subplots(2, 2).flatten()
-    for ax, res in zip(axes, results, strict=True):
-        cm = confusion_matrix(y_test, res.y_pred, labels=[0, 1])
-        acc = accuracy_score(y_test, res.y_pred)
+    for ax, (case, res) in zip(axes, results.items(), strict=True):
+        labels = list(range(len(res.class_names)))
+        cm = confusion_matrix(res.y_test, res.y_pred, labels=labels)
+        acc = accuracy_score(res.y_test, res.y_pred)
         sns.heatmap(
             cm,
             annot=True,
             fmt="d",
             cmap="Blues",
             cbar=False,
-            xticklabels=CLASS_NAMES,
-            yticklabels=CLASS_NAMES,
+            xticklabels=res.class_names,
+            yticklabels=res.class_names,
             ax=ax,
-            annot_kws={"size": 14},
+            annot_kws={"size": 13},
         )
-        ax.set_title(f"{res.name}  (accuracy {acc:.2%})")
+        ax.set_title(f"{case}\naccuracy {acc:.2%}")
         ax.set_xlabel("Predicted")
         ax.set_ylabel("Actual")
-    fig.suptitle("Confusion matrices on the held-out test set", fontsize=14)
+    fig.suptitle(f"{spec.title}: confusion matrices on each held-out test set", fontsize=15)
     fig.savefig(path, dpi=150)
+
+
+# --------------------------------------------------------------------------- main
 
 
 def main() -> None:
     torch.manual_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     OUT_DIR.mkdir(exist_ok=True)
+    print(f"device={device}\n")
 
-    df = load_dataset()
-    print(f"Loaded {len(df)} samples from {df['source'].nunique()} files")
-    print(df.groupby(["source", "label"]).size().to_string(), "\n")
+    splits: dict[str, Split] = {}
+    for case, rel in CASES.items():
+        data, class_names = load_case(DATA_DIR / rel)
+        splits[case] = make_split(data, class_names)
+        counts = data.groupby(["source", "class_name"]).size().to_dict()
+        print(f"{case}: {len(data)} rows, classes={class_names}")
+        for (src, cls), n in counts.items():
+            print(f"    {src:<22} -> {cls:<10} {n} rows")
+        s = splits[case]
+        print(f"    split train={len(s.y_train)} val={len(s.y_val)} test={len(s.y_test)}")
+    print()
 
-    split = make_split(df)
-    print(
-        f"train={len(split.y_train)}  val={len(split.y_val)}  test={len(split.y_test)}  "
-        f"device={device}\n"
-    )
+    metrics: dict[str, dict[str, dict[str, object]]] = {}
+    summary: dict[str, dict[str, float]] = {}
+    for spec in MODELS:
+        results: dict[str, CaseResult] = {}
+        for case, split in splits.items():
+            history, y_pred = spec.trainer(split, device)
+            results[case] = CaseResult(history, split.y_test, y_pred, split.class_names)
+            print(f"trained {spec.title:<30} on {case}")
 
-    results = [
-        run_logistic_regression(split),
-        run_svm(split),
-        run_ann(split, device),
-        run_cnn(split, device),
-    ]
+        metrics[spec.title] = {case: compute_metrics(res) for case, res in results.items()}
+        summary[spec.title] = {
+            case: float(accuracy_score(res.y_test, res.y_pred)) for case, res in results.items()
+        }
+        plot_loss_curves(spec, results, OUT_DIR / f"{spec.key}_loss_curves.png")
+        plot_confusion_matrices(spec, results, OUT_DIR / f"{spec.key}_confusion_matrices.png")
 
-    metrics: dict[str, dict[str, object]] = {}
-    for res in results:
-        m = compute_metrics(split.y_test, res.y_pred)
-        metrics[res.name] = m
-        cm = m["confusion_matrix"]
-        print(
-            f"{res.name:<20} acc={m['accuracy']:.4f}  prec={m['precision']:.4f}  "
-            f"rec={m['recall']:.4f}  f1={m['f1']:.4f}"
-        )
-        print(f"{'':<20} confusion matrix [[TN, FP], [FN, TP]] = {cm}")
-
-    plot_losses(results, OUT_DIR / "loss_curves.png")
-    plot_confusion_matrices(results, split.y_test, OUT_DIR / "confusion_matrices.png")
     (OUT_DIR / "metrics.json").write_text(json.dumps(metrics, indent=2))
-    print(f"\nSaved plots and metrics to {OUT_DIR}")
+
+    print("\nTest accuracy (rows = model, columns = dataset case)")
+    print(pd.DataFrame(summary).T.to_string(float_format=lambda v: f"{v:.4f}"))
+    for spec in MODELS:
+        print(f"\n{spec.title}")
+        for case, m in metrics[spec.title].items():
+            print(f"  {case:<28} classes={m['classes']}  confusion={m['confusion_matrix']}")
+    print(f"\nSaved {2 * len(MODELS)} images and metrics.json to {OUT_DIR}")
 
 
 if __name__ == "__main__":
