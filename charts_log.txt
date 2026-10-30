@@ -1,0 +1,70 @@
+device=cpu, data=D:\ml\newdata
+
+OpenSource - Noisy: 3000 rows, classes=['Healthy', 'Faulty', 'Heavy Load'], features=['Loudness', 'Sharpness', 'Roughness']
+    Noisy_Broken.csv       -> Faulty     1000 rows
+    Noisy_Good.csv         -> Healthy    1000 rows
+    Noisy_HeavyLoad.csv    -> Heavy Load 1000 rows
+    split train=2100 val=450 test=450
+OpenSource - Without noise: 3000 rows, classes=['Healthy', 'Faulty', 'Heavy Load'], features=['Loudness', 'Sharpness', 'Roughness']
+    Broken_pure.csv        -> Faulty     1000 rows
+    Good_pure.csv          -> Healthy    1000 rows
+    HeavyLoad_pure.csv     -> Heavy Load 1000 rows
+    split train=2100 val=450 test=450
+TwoWheeler - Noisy: 2000 rows, classes=['Healthy', 'Faulty'], features=['Loudness', 'Sharpness', 'Roughness']
+    Noisy_Faulty.csv       -> Faulty     1000 rows
+    Noisy_Healthy.csv      -> Healthy    1000 rows
+    split train=1400 val=300 test=300
+TwoWheeler - Without noise: 2000 rows, classes=['Healthy', 'Faulty'], features=['Loudness', 'Sharpness', 'Roughness']
+    Faulty_Pure.csv        -> Faulty     1000 rows
+    Healthy_Pure.csv       -> Healthy    1000 rows
+    split train=1400 val=300 test=300
+
+trained Logistic / Softmax Regression  on OpenSource - Noisy
+trained Logistic / Softmax Regression  on OpenSource - Without noise
+trained Logistic / Softmax Regression  on TwoWheeler - Noisy
+trained Logistic / Softmax Regression  on TwoWheeler - Without noise
+trained SVM (RBF kernel)               on OpenSource - Noisy
+trained SVM (RBF kernel)               on OpenSource - Without noise
+trained SVM (RBF kernel)               on TwoWheeler - Noisy
+trained SVM (RBF kernel)               on TwoWheeler - Without noise
+trained ANN (MLP)                      on OpenSource - Noisy
+trained ANN (MLP)                      on OpenSource - Without noise
+trained ANN (MLP)                      on TwoWheeler - Noisy
+trained ANN (MLP)                      on TwoWheeler - Without noise
+trained 1D-CNN                         on OpenSource - Noisy
+trained 1D-CNN                         on OpenSource - Without noise
+trained 1D-CNN                         on TwoWheeler - Noisy
+trained 1D-CNN                         on TwoWheeler - Without noise
+
+Test accuracy (rows = model, columns = dataset case)
+                               OpenSource - Noisy  OpenSource - Without noise  TwoWheeler - Noisy  TwoWheeler - Without noise
+Logistic / Softmax Regression              0.9533                      1.0000              0.9333                      0.9933
+SVM (RBF kernel)                           0.9600                      1.0000              0.9867                      0.9900
+ANN (MLP)                                  0.9600                      1.0000              0.9967                      0.9967
+1D-CNN                                     0.9667                      1.0000              0.9967                      0.9967
+
+Logistic / Softmax Regression
+  OpenSource - Noisy           classes=['Healthy', 'Faulty', 'Heavy Load']  confusion=[[137, 0, 13], [0, 150, 0], [8, 0, 142]]
+  OpenSource - Without noise   classes=['Healthy', 'Faulty', 'Heavy Load']  confusion=[[150, 0, 0], [0, 150, 0], [0, 0, 150]]
+  TwoWheeler - Noisy           classes=['Healthy', 'Faulty']  confusion=[[148, 2], [18, 132]]
+  TwoWheeler - Without noise   classes=['Healthy', 'Faulty']  confusion=[[149, 1], [1, 149]]
+
+SVM (RBF kernel)
+  OpenSource - Noisy           classes=['Healthy', 'Faulty', 'Heavy Load']  confusion=[[135, 0, 15], [0, 150, 0], [3, 0, 147]]
+  OpenSource - Without noise   classes=['Healthy', 'Faulty', 'Heavy Load']  confusion=[[150, 0, 0], [0, 150, 0], [0, 0, 150]]
+  TwoWheeler - Noisy           classes=['Healthy', 'Faulty']  confusion=[[148, 2], [2, 148]]
+  TwoWheeler - Without noise   classes=['Healthy', 'Faulty']  confusion=[[150, 0], [3, 147]]
+
+ANN (MLP)
+  OpenSource - Noisy           classes=['Healthy', 'Faulty', 'Heavy Load']  confusion=[[137, 0, 13], [0, 150, 0], [5, 0, 145]]
+  OpenSource - Without noise   classes=['Healthy', 'Faulty', 'Heavy Load']  confusion=[[150, 0, 0], [0, 150, 0], [0, 0, 150]]
+  TwoWheeler - Noisy           classes=['Healthy', 'Faulty']  confusion=[[150, 0], [1, 149]]
+  TwoWheeler - Without noise   classes=['Healthy', 'Faulty']  confusion=[[150, 0], [1, 149]]
+
+1D-CNN
+  OpenSource - Noisy           classes=['Healthy', 'Faulty', 'Heavy Load']  confusion=[[138, 0, 12], [0, 150, 0], [3, 0, 147]]
+  OpenSource - Without noise   classes=['Healthy', 'Faulty', 'Heavy Load']  confusion=[[150, 0, 0], [0, 150, 0], [0, 0, 150]]
+  TwoWheeler - Noisy           classes=['Healthy', 'Faulty']  confusion=[[150, 0], [1, 149]]
+  TwoWheeler - Without noise   classes=['Healthy', 'Faulty']  confusion=[[150, 0], [1, 149]]
+
+Saved 8 images and metrics.json to D:\ml\outputs_newdata

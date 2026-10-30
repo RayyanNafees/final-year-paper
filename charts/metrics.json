@@ -1,0 +1,442 @@
+{
+  "Logistic / Softmax Regression": {
+    "OpenSource - Noisy": {
+      "classes": [
+        "Healthy",
+        "Faulty",
+        "Heavy Load"
+      ],
+      "accuracy": 0.9533333333333334,
+      "precision_macro": 0.9536522061549869,
+      "recall_macro": 0.9533333333333333,
+      "f1_macro": 0.9533203667685468,
+      "confusion_matrix": [
+        [
+          137,
+          0,
+          13
+        ],
+        [
+          0,
+          150,
+          0
+        ],
+        [
+          8,
+          0,
+          142
+        ]
+      ],
+      "epochs_trained": 228,
+      "best_epoch": 198,
+      "selected_hyperparameters": null
+    },
+    "OpenSource - Without noise": {
+      "classes": [
+        "Healthy",
+        "Faulty",
+        "Heavy Load"
+      ],
+      "accuracy": 1.0,
+      "precision_macro": 1.0,
+      "recall_macro": 1.0,
+      "f1_macro": 1.0,
+      "confusion_matrix": [
+        [
+          150,
+          0,
+          0
+        ],
+        [
+          0,
+          150,
+          0
+        ],
+        [
+          0,
+          0,
+          150
+        ]
+      ],
+      "epochs_trained": 300,
+      "best_epoch": 298,
+      "selected_hyperparameters": null
+    },
+    "TwoWheeler - Noisy": {
+      "classes": [
+        "Healthy",
+        "Faulty"
+      ],
+      "accuracy": 0.9333333333333333,
+      "precision_macro": 0.9383204459629563,
+      "recall_macro": 0.9333333333333333,
+      "f1_macro": 0.933143162774113,
+      "confusion_matrix": [
+        [
+          148,
+          2
+        ],
+        [
+          18,
+          132
+        ]
+      ],
+      "epochs_trained": 91,
+      "best_epoch": 61,
+      "selected_hyperparameters": null
+    },
+    "TwoWheeler - Without noise": {
+      "classes": [
+        "Healthy",
+        "Faulty"
+      ],
+      "accuracy": 0.9933333333333333,
+      "precision_macro": 0.9933333333333333,
+      "recall_macro": 0.9933333333333333,
+      "f1_macro": 0.9933333333333333,
+      "confusion_matrix": [
+        [
+          149,
+          1
+        ],
+        [
+          1,
+          149
+        ]
+      ],
+      "epochs_trained": 300,
+      "best_epoch": 300,
+      "selected_hyperparameters": null
+    }
+  },
+  "SVM (RBF kernel)": {
+    "OpenSource - Noisy": {
+      "classes": [
+        "Healthy",
+        "Faulty",
+        "Heavy Load"
+      ],
+      "accuracy": 0.96,
+      "precision_macro": 0.9618894256575415,
+      "recall_macro": 0.96,
+      "f1_macro": 0.9599358974358975,
+      "confusion_matrix": [
+        [
+          135,
+          0,
+          15
+        ],
+        [
+          0,
+          150,
+          0
+        ],
+        [
+          3,
+          0,
+          147
+        ]
+      ],
+      "epochs_trained": 100,
+      "best_epoch": null,
+      "selected_hyperparameters": "gamma=0.1, alpha=0.0001"
+    },
+    "OpenSource - Without noise": {
+      "classes": [
+        "Healthy",
+        "Faulty",
+        "Heavy Load"
+      ],
+      "accuracy": 1.0,
+      "precision_macro": 1.0,
+      "recall_macro": 1.0,
+      "f1_macro": 1.0,
+      "confusion_matrix": [
+        [
+          150,
+          0,
+          0
+        ],
+        [
+          0,
+          150,
+          0
+        ],
+        [
+          0,
+          0,
+          150
+        ]
+      ],
+      "epochs_trained": 100,
+      "best_epoch": null,
+      "selected_hyperparameters": "gamma=0.1, alpha=0.0001"
+    },
+    "TwoWheeler - Noisy": {
+      "classes": [
+        "Healthy",
+        "Faulty"
+      ],
+      "accuracy": 0.9866666666666667,
+      "precision_macro": 0.9866666666666667,
+      "recall_macro": 0.9866666666666667,
+      "f1_macro": 0.9866666666666667,
+      "confusion_matrix": [
+        [
+          148,
+          2
+        ],
+        [
+          2,
+          148
+        ]
+      ],
+      "epochs_trained": 100,
+      "best_epoch": null,
+      "selected_hyperparameters": "gamma=1.0, alpha=0.0001"
+    },
+    "TwoWheeler - Without noise": {
+      "classes": [
+        "Healthy",
+        "Faulty"
+      ],
+      "accuracy": 0.99,
+      "precision_macro": 0.9901960784313726,
+      "recall_macro": 0.99,
+      "f1_macro": 0.9899989998999901,
+      "confusion_matrix": [
+        [
+          150,
+          0
+        ],
+        [
+          3,
+          147
+        ]
+      ],
+      "epochs_trained": 100,
+      "best_epoch": null,
+      "selected_hyperparameters": "gamma=1.0, alpha=0.0001"
+    }
+  },
+  "ANN (MLP)": {
+    "OpenSource - Noisy": {
+      "classes": [
+        "Healthy",
+        "Faulty",
+        "Heavy Load"
+      ],
+      "accuracy": 0.96,
+      "precision_macro": 0.9608367504605694,
+      "recall_macro": 0.96,
+      "f1_macro": 0.959971535314001,
+      "confusion_matrix": [
+        [
+          137,
+          0,
+          13
+        ],
+        [
+          0,
+          150,
+          0
+        ],
+        [
+          5,
+          0,
+          145
+        ]
+      ],
+      "epochs_trained": 114,
+      "best_epoch": 84,
+      "selected_hyperparameters": null
+    },
+    "OpenSource - Without noise": {
+      "classes": [
+        "Healthy",
+        "Faulty",
+        "Heavy Load"
+      ],
+      "accuracy": 1.0,
+      "precision_macro": 1.0,
+      "recall_macro": 1.0,
+      "f1_macro": 1.0,
+      "confusion_matrix": [
+        [
+          150,
+          0,
+          0
+        ],
+        [
+          0,
+          150,
+          0
+        ],
+        [
+          0,
+          0,
+          150
+        ]
+      ],
+      "epochs_trained": 145,
+      "best_epoch": 115,
+      "selected_hyperparameters": null
+    },
+    "TwoWheeler - Noisy": {
+      "classes": [
+        "Healthy",
+        "Faulty"
+      ],
+      "accuracy": 0.9966666666666667,
+      "precision_macro": 0.9966887417218543,
+      "recall_macro": 0.9966666666666666,
+      "f1_macro": 0.9966666296292181,
+      "confusion_matrix": [
+        [
+          150,
+          0
+        ],
+        [
+          1,
+          149
+        ]
+      ],
+      "epochs_trained": 107,
+      "best_epoch": 77,
+      "selected_hyperparameters": null
+    },
+    "TwoWheeler - Without noise": {
+      "classes": [
+        "Healthy",
+        "Faulty"
+      ],
+      "accuracy": 0.9966666666666667,
+      "precision_macro": 0.9966887417218543,
+      "recall_macro": 0.9966666666666666,
+      "f1_macro": 0.9966666296292181,
+      "confusion_matrix": [
+        [
+          150,
+          0
+        ],
+        [
+          1,
+          149
+        ]
+      ],
+      "epochs_trained": 251,
+      "best_epoch": 221,
+      "selected_hyperparameters": null
+    }
+  },
+  "1D-CNN": {
+    "OpenSource - Noisy": {
+      "classes": [
+        "Healthy",
+        "Faulty",
+        "Heavy Load"
+      ],
+      "accuracy": 0.9666666666666667,
+      "precision_macro": 0.9677505687140372,
+      "recall_macro": 0.9666666666666667,
+      "f1_macro": 0.9666366396423447,
+      "confusion_matrix": [
+        [
+          138,
+          0,
+          12
+        ],
+        [
+          0,
+          150,
+          0
+        ],
+        [
+          3,
+          0,
+          147
+        ]
+      ],
+      "epochs_trained": 65,
+      "best_epoch": 35,
+      "selected_hyperparameters": null
+    },
+    "OpenSource - Without noise": {
+      "classes": [
+        "Healthy",
+        "Faulty",
+        "Heavy Load"
+      ],
+      "accuracy": 1.0,
+      "precision_macro": 1.0,
+      "recall_macro": 1.0,
+      "f1_macro": 1.0,
+      "confusion_matrix": [
+        [
+          150,
+          0,
+          0
+        ],
+        [
+          0,
+          150,
+          0
+        ],
+        [
+          0,
+          0,
+          150
+        ]
+      ],
+      "epochs_trained": 72,
+      "best_epoch": 42,
+      "selected_hyperparameters": null
+    },
+    "TwoWheeler - Noisy": {
+      "classes": [
+        "Healthy",
+        "Faulty"
+      ],
+      "accuracy": 0.9966666666666667,
+      "precision_macro": 0.9966887417218543,
+      "recall_macro": 0.9966666666666666,
+      "f1_macro": 0.9966666296292181,
+      "confusion_matrix": [
+        [
+          150,
+          0
+        ],
+        [
+          1,
+          149
+        ]
+      ],
+      "epochs_trained": 65,
+      "best_epoch": 35,
+      "selected_hyperparameters": null
+    },
+    "TwoWheeler - Without noise": {
+      "classes": [
+        "Healthy",
+        "Faulty"
+      ],
+      "accuracy": 0.9966666666666667,
+      "precision_macro": 0.9966887417218543,
+      "recall_macro": 0.9966666666666666,
+      "f1_macro": 0.9966666296292181,
+      "confusion_matrix": [
+        [
+          150,
+          0
+        ],
+        [
+          1,
+          149
+        ]
+      ],
+      "epochs_trained": 79,
+      "best_epoch": 49,
+      "selected_hyperparameters": null
+    }
+  }
+}

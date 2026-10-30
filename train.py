@@ -13,11 +13,14 @@ Fluctuation, Roughness), and each row's class label comes from its CSV file name
 For every model the script writes one loss-curve image and one confusion-matrix image
 to ``outputs/``, each with one panel per dataset case.
 
-Run with:  uv run train.py
+Run with:  uv run train.py [--data-dir newdata --out-dir outputs_newdata]
+Only the features of FEATURES that are present in the CSVs are used, so a dataset without
+e.g. Fluctuation trains on the remaining three features.
 """
 
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 from collections.abc import Callable
@@ -110,6 +113,10 @@ class Split:
     def n_classes(self) -> int:
         return len(self.class_names)
 
+    @property
+    def n_features(self) -> int:
+        return self.x_train.shape[1]
+
 
 @dataclass
 class CaseResult:
@@ -156,8 +163,8 @@ def make_split(
     data: pd.DataFrame, class_names: list[str], log_features: list[str] = LOG_FEATURES
 ) -> Split:
     """Stratified 70/15/15 split -> log10 of skewed features -> StandardScaler fit on train only."""
-    features = data[FEATURES].copy()
-    for col in log_features:
+    features = data[[f for f in FEATURES if f in data.columns]].copy()
+    for col in (c for c in log_features if c in features.columns):
         features[col] = np.log10(features[col])
     x = features.to_numpy(dtype=np.float32)
     y = data["label"].to_numpy(dtype=np.int64)
@@ -356,17 +363,17 @@ def train_torch(
 
 def train_linear(split: Split, device: torch.device) -> tuple[History, IntArray]:
     torch.manual_seed(SEED)
-    return train_torch(LinearClassifier(len(FEATURES), split.n_classes), split, device, lr=1e-2)
+    return train_torch(LinearClassifier(split.n_features, split.n_classes), split, device, lr=1e-2)
 
 
 def train_ann(split: Split, device: torch.device) -> tuple[History, IntArray]:
     torch.manual_seed(SEED)
-    return train_torch(ANN(len(FEATURES), split.n_classes), split, device, lr=1e-3)
+    return train_torch(ANN(split.n_features, split.n_classes), split, device, lr=1e-3)
 
 
 def train_cnn(split: Split, device: torch.device) -> tuple[History, IntArray]:
     torch.manual_seed(SEED)
-    return train_torch(CNN1D(len(FEATURES), split.n_classes), split, device, lr=1e-3)
+    return train_torch(CNN1D(split.n_features, split.n_classes), split, device, lr=1e-3)
 
 
 # ----------------------------------------------------------------- model registry
@@ -483,17 +490,25 @@ def plot_confusion_matrices(spec: ModelSpec, results: dict[str, CaseResult], pat
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
+    parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
+    args = parser.parse_args()
+    data_dir: Path = args.data_dir.resolve()
+    out_dir: Path = args.out_dir.resolve()
+
     torch.manual_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    OUT_DIR.mkdir(exist_ok=True)
-    print(f"device={device}\n")
+    out_dir.mkdir(exist_ok=True)
+    print(f"device={device}, data={data_dir}\n")
 
     splits: dict[str, Split] = {}
     for case, rel in CASES.items():
-        data, class_names = load_case(DATA_DIR / rel)
+        data, class_names = load_case(data_dir / rel)
         splits[case] = make_split(data, class_names)
         counts = data.groupby(["source", "class_name"]).size().to_dict()
-        print(f"{case}: {len(data)} rows, classes={class_names}")
+        used = [f for f in FEATURES if f in data.columns]
+        print(f"{case}: {len(data)} rows, classes={class_names}, features={used}")
         for (src, cls), n in counts.items():
             print(f"    {src:<22} -> {cls:<10} {n} rows")
         s = splits[case]
@@ -513,10 +528,10 @@ def main() -> None:
         summary[spec.title] = {
             case: float(accuracy_score(res.y_test, res.y_pred)) for case, res in results.items()
         }
-        plot_loss_curves(spec, results, OUT_DIR / f"{spec.key}_loss_curves.png")
-        plot_confusion_matrices(spec, results, OUT_DIR / f"{spec.key}_confusion_matrices.png")
+        plot_loss_curves(spec, results, out_dir / f"{spec.key}_loss_curves.png")
+        plot_confusion_matrices(spec, results, out_dir / f"{spec.key}_confusion_matrices.png")
 
-    (OUT_DIR / "metrics.json").write_text(json.dumps(metrics, indent=2))
+    (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
 
     print("\nTest accuracy (rows = model, columns = dataset case)")
     print(pd.DataFrame(summary).T.to_string(float_format=lambda v: f"{v:.4f}"))
@@ -524,7 +539,7 @@ def main() -> None:
         print(f"\n{spec.title}")
         for case, m in metrics[spec.title].items():
             print(f"  {case:<28} classes={m['classes']}  confusion={m['confusion_matrix']}")
-    print(f"\nSaved {2 * len(MODELS)} images and metrics.json to {OUT_DIR}")
+    print(f"\nSaved {2 * len(MODELS)} images and metrics.json to {out_dir}")
 
 
 if __name__ == "__main__":
